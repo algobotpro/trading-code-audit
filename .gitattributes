@@ -1,0 +1,7 @@
+# Store LF in the repository, check out whatever the machine prefers.
+#
+# Git on Windows converts to CRLF on checkout, which is fine locally. Without
+# this file, though, the first commit from a Linux or macOS contributor can
+# rewrite every line of every file, and the diff becomes unreadable — the
+# change is invisible inside a wall of whitespace noise.
+* text=auto eol=lf

@@ -1,0 +1,18 @@
+{
+  "name": "trading-code-audit",
+  "version": "0.1.0",
+  "description": "Static analyser for MetaTrader Expert Advisors (MQL4/MQL5) and TradingView Pine Script. Finds the failures that pass the Strategy Tester and cost money live.",
+  "keywords": ["mql5", "mql4", "metatrader", "expert-advisor", "pine-script", "tradingview", "static-analysis", "linter", "algorithmic-trading", "forex"],
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "files": ["src", "RULES.md"],
+  "scripts": {
+    "test": "node --experimental-strip-types --no-warnings test/audit-check.mjs"
+  },
+  "engines": { "node": ">=22.6" },
+  "repository": { "type": "git", "url": "git+https://github.com/algobotpro/trading-code-audit.git" },
+  "bugs": { "url": "https://github.com/algobotpro/trading-code-audit/issues" },
+  "homepage": "https://algobot-pro.com/en/tools/ea-code-audit"
+}
