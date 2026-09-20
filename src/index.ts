@@ -1,6 +1,6 @@
 import { maskCommentsAndStrings } from './mask';
 import { analyse } from './lang/structure';
-import { rules } from './rules';
+import { rules } from './rules/index';
 import type { AuditResult, Dialect, Finding, RuleContext, Severity } from './types';
 
 export type { AuditResult, Finding, Severity, Dialect } from './types';
@@ -25,6 +25,8 @@ export function detectDialect(src: string): Dialect {
     /\bOn(Tick|Init|Deinit|Calculate|Timer|Trade|ChartEvent)\b/.test(src) ||
     /\b(OrderSend|OrderSelect|OrdersTotal|OrderClose|OrderModify|OrderDelete|OrderTicket|OrderLots|OrderMagicNumber)\b/.test(src) ||
     /\b(PositionsTotal|PositionSelect|PositionGetTicket|PositionGetDouble|PositionGetInteger)\b/.test(src) ||
+    /\bHistory(Select|SelectByPosition|DealsTotal|OrdersTotal|DealGetTicket|OrderGetTicket|DealSelect|OrderSelect|DealGet\w+|OrderGet\w+)\b/.test(src) ||
+    /\b(ArraySetAsSeries|ArrayGetAsSeries|BarsCalculated|IndicatorRelease|TimeToStruct|MqlDateTime|OrderCalcMargin|RefreshRates)\b/.test(src) ||
     /\b(SymbolInfoDouble|SymbolInfoInteger|SymbolInfoString|MarketInfo|AccountBalance|AccountInfoDouble)\b/.test(src) ||
     /\b(MqlTick|MqlTradeRequest|MqlTradeResult|MqlRates|CTrade|CPositionInfo)\b/.test(src) ||
     /#property|#include\s*<|\bextern\s+(double|int|bool|string)\b|\binput\s+(double|int|bool|string|datetime|color)\b/.test(src) ||

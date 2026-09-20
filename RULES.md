@@ -1,8 +1,8 @@
-# The sixteen checks
+# The 31 checks
 
 Generated from the analyser's own rule table, so it cannot drift from the code.
 
-## MetaTrader — MQL4 and MQL5
+## MetaTrader — MQL4 and MQL5 (25)
 
 | id | severity | what it looks for |
 | --- | --- | --- |
@@ -16,8 +16,23 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 | `five-digit` | 🟡 warning | Point is used without adjusting for 5-digit and 3-digit brokers |
 | `sleep-in-ontick` | ⚪ note | Sleep is called inside the tick handler |
 | `zero-guard` | 🟡 warning | Division with no guard against a zero denominator |
+| `lot-min-max-unclamped` | 🔴 critical | Lot size is stepped but never clamped to the broker's minimum and maximum |
+| `freeze-level` | 🔴 critical | Positions are closed or modified without checking the freeze level |
+| `margin-not-checked` | 🟡 warning | Orders are sent without checking that the account can afford them |
+| `slippage-zero` | 🟡 warning | Market orders are sent with zero slippage |
+| `partial-fill-unhandled` | 🔴 critical | A partial fill is treated as a full one |
+| `requote-unhandled` | 🟡 warning | Requotes and stale prices are not separated from real failures |
+| `no-sl-at-all` | 🔴 critical | Every order is sent with no stop loss, and none is set afterwards |
+| `loop-forward-while-closing` | 🔴 critical | Positions are closed inside a loop that counts upward |
+| `history-select-missing` | 🔴 critical | Trade history is read without selecting it first |
+| `history-select-clobbered` | 🔴 critical | The history list is destroyed in the middle of the loop that walks it |
+| `local-time-for-trading` | 🔴 critical | Trading decisions are made from the computer's clock, not the server's |
+| `copybuffer-return-ignored` | 🔴 critical | The result of CopyBuffer is not checked |
+| `arraysetasseries-missing` | 🔴 critical | An array filled by CopyBuffer or CopyRates is read without setting it as a series |
+| `arraysetasseries-on-static` | 🟡 warning | ArraySetAsSeries is called on an array that cannot accept it |
+| `refreshrates-in-mql5` | 🔴 critical | RefreshRates is called in what looks like MQL5 code |
 
-## TradingView — Pine Script
+## TradingView — Pine Script (6)
 
 | id | severity | what it looks for |
 | --- | --- | --- |
@@ -109,6 +124,126 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 *What it costs.* Indicator buffers return zero before they have enough bars, and at that moment the result is infinity or a silent zero. The first trades after a restart are placed on nonsense values.
 
 *The fix.* Check the denominator is meaningfully above zero before dividing, and return early when the indicator is not ready.
+
+### `lot-min-max-unclamped`
+
+**Lot size is stepped but never clamped to the broker's minimum and maximum**
+
+*What it costs.* You rounded to the volume step, so you thought about this — but a broker rejects anything below SYMBOL_VOLUME_MIN or above SYMBOL_VOLUME_MAX just as hard. The order simply never opens, and the tester never shows it because the tester accepts whatever volume you hand it.
+
+*The fix.* After flooring to the step, clamp: MathMin(SYMBOL_VOLUME_MAX, MathMax(SYMBOL_VOLUME_MIN, lot)). Read both with SymbolInfoDouble.
+
+### `freeze-level`
+
+**Positions are closed or modified without checking the freeze level**
+
+*What it costs.* The freeze level is not the stops level. The stops level says where you may put a stop; the freeze level says when you may no longer touch something that already exists. Inside that band the server refuses to close, modify or cancel — retcode 10029 — and your exit does not happen at the moment you most need it to.
+
+*The fix.* Read SYMBOL_TRADE_FREEZE_LEVEL and check the distance before modifying or closing. Many brokers report zero, but some enforce the stops level on modification anyway, so MathMax(stops_level, freeze_level) is the safe distance.
+
+### `margin-not-checked`
+
+**Orders are sent without checking that the account can afford them**
+
+*What it costs.* The order is rejected for insufficient margin, and whatever your code does next assumes a position that does not exist. This is the one pre-send check MetaQuotes requires for publication in the Market, which is a fair signal of how often it is skipped.
+
+*The fix.* Call OrderCalcMargin for the intended volume and compare it to AccountInfoDouble(ACCOUNT_MARGIN_FREE) before sending. Decide explicitly what to do when it does not fit — skipping the trade is a decision, silently failing is not.
+
+### `slippage-zero`
+
+**Market orders are sent with zero slippage**
+
+*What it costs.* With a deviation of zero the server must fill at exactly the price you asked for. On a quiet pair it usually can. Around news, or on any broker with real execution, it cannot — and the order is rejected instead of filled. The strategy does not lose money; it simply does not trade, on precisely the days it was written for.
+
+*The fix.* Set a deviation you can live with, in points, and handle the requote return codes rather than hoping for an exact fill.
+
+### `partial-fill-unhandled`
+
+**A partial fill is treated as a full one**
+
+*What it costs.* The server may fill less volume than you asked for. If result.volume is never compared to request.volume, the robot believes it holds a position it does not hold — and every number computed from it afterwards is wrong: the exit volume, the risk, the stop distance.
+
+*The fix.* Compare result.volume with request.volume after every send. Decide explicitly whether to top up the remainder, close what filled, or carry on with the smaller size.
+
+### `requote-unhandled`
+
+**Requotes and stale prices are not separated from real failures**
+
+*What it costs.* Your code does look at the return code, so it is being careful — but a requote is not a failure, it is the server saying “the price moved, ask again”. Treated as a failure, the entry is abandoned. Treated as a success, the robot thinks it is in a trade. Either way the behaviour on a fast market differs from the behaviour in the tester.
+
+*The fix.* Branch on TRADE_RETCODE_REQUOTE and TRADE_RETCODE_PRICE_CHANGED (10004, 10006, 10021 — 138 and 136 in MQL4): refresh the price and retry a bounded number of times, then give up loudly.
+
+### `no-sl-at-all`
+
+**Every order is sent with no stop loss, and none is set afterwards**
+
+*What it costs.* This is not automatically a bug — some strategies genuinely manage risk in code rather than at the broker. But then the exit depends on your robot still running, your VPS still up, and your connection still alive. A stop loss at the broker survives all three failing.
+
+*The fix.* If the absence is deliberate, say so in a comment and make sure there is a code path that exits without a live connection. If it is not deliberate, set sl on the send or immediately after.
+
+### `loop-forward-while-closing`
+
+**Positions are closed inside a loop that counts upward**
+
+*What it costs.* Closing at index 0 moves what was at index 1 down to index 0, while the counter moves up to 1 — so that one is never seen. The loop closes every second position and leaves the rest open. The tester rarely shows it because there is usually only one position there. Live, on the day you wanted everything flat, half of it stays.
+
+*The fix.* Count down: for(int i = PositionsTotal() - 1; i >= 0; i--). On a busy account, or with a FIFO broker, collect the tickets into an array first and act on tickets rather than on indices.
+
+### `history-select-missing`
+
+**Trade history is read without selecting it first**
+
+*What it costs.* HistorySelect builds the history list your program can see. Without it the list is empty and HistoryDealGetTicket returns zero — with no error at all. The loop runs, finds nothing, and the robot concludes it has no closed trades. This is the usual reason an EA cannot find its own history.
+
+*The fix.* Call HistorySelect(from, to) — or HistorySelectByPosition(position_id) — before any HistoryDeal* or HistoryOrder* call, and check that it returned true.
+
+### `history-select-clobbered`
+
+**The history list is destroyed in the middle of the loop that walks it**
+
+*What it costs.* HistoryOrderSelect and HistoryDealSelect do not read from the list HistorySelect built — they clear it and put a single item in it. Calling either inside a loop over HistoryDealsTotal() empties the collection while you are iterating it, so the loop stops early or reads the wrong rows.
+
+*The fix.* Inside the loop use HistoryDealGetTicket(i) and the HistoryDealGet* accessors, which read from the existing list. Keep HistoryOrderSelect and HistoryDealSelect outside any such loop.
+
+### `local-time-for-trading`
+
+**Trading decisions are made from the computer's clock, not the server's**
+
+*What it costs.* TimeLocal is the clock of whatever machine the terminal happens to run on. The same robot then behaves one way on a VPS in Germany and another on a laptop in Tehran, and changes its own behaviour twice a year when daylight saving moves. A session filter built on it is not the filter you tested.
+
+*The fix.* Use TimeCurrent() for anything the market cares about. If you genuinely need a wall-clock hour, derive the broker's offset explicitly rather than assuming it.
+
+### `copybuffer-return-ignored`
+
+**The result of CopyBuffer is not checked**
+
+*What it costs.* CopyBuffer returns -1 on error, and a number smaller than you asked for when the data was not ready before the timeout. The second case is the dangerous one: nothing fails, the tail of your array simply keeps whatever was in it, and the robot decides on stale numbers.
+
+*The fix.* Guard on the count, not on the sign: if(CopyBuffer(h, b, start, count, arr) != count) return. Use BarsCalculated(handle) to know when the indicator is ready at all.
+
+### `arraysetasseries-missing`
+
+**An array filled by CopyBuffer or CopyRates is read without setting it as a series**
+
+*What it costs.* CopyBuffer and CopyRates always place the oldest element at the start of the array, whatever the array's own flag says. So arr[0] — the one you are reading as the current bar — is the oldest bar in the window. There is no error, no warning, and no change in the return value. The robot simply trades on the stalest number it copied.
+
+*The fix.* Call ArraySetAsSeries(arr, true) before the copy, so index 0 is the most recent bar. Confirm with ArrayGetAsSeries if you want to be sure.
+
+### `arraysetasseries-on-static`
+
+**ArraySetAsSeries is called on an array that cannot accept it**
+
+*What it costs.* The series flag cannot be set on a statically sized array or a multidimensional one — the call returns false and the array stays forward-indexed. Because almost nobody reads that return value, the result is the same off-by-the-whole-window error as leaving the call out, but now with a line of code that looks like the problem was handled.
+
+*The fix.* Declare the buffer as a dynamic array — double buf[]; — and resize it with ArrayResize or let CopyBuffer size it. Check the return value of ArraySetAsSeries while you are there.
+
+### `refreshrates-in-mql5`
+
+**RefreshRates is called in what looks like MQL5 code**
+
+*What it costs.* RefreshRates does not exist in MQL5. This is not a call that quietly does nothing — the file will not compile. It is almost always left over from an unfinished port from MQL4, which means there are probably other MQL4 assumptions in the same file.
+
+*The fix.* Read the tick instead: MqlTick t; SymbolInfoTick(_Symbol, t); then use t.bid and t.ask. While you are here, check the rest of the file for other MQL4 leftovers — Bid, Ask and Digits are not predefined variables in MQL5 either.
 
 ### `pine-lookahead-missing`
 

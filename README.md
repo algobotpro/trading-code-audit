@@ -1,7 +1,7 @@
 # trading-code-audit
 
 A static analyser for MetaTrader Expert Advisors and TradingView Pine scripts.
-It looks for sixteen failure patterns that pass the Strategy Tester and cost
+It looks for 31 failure patterns that pass the Strategy Tester and cost
 money on a live account.
 
 No network. No telemetry. It never executes the code it reads.
@@ -58,7 +58,7 @@ class CRiskManager {
 
 ## The checks
 
-Sixteen, listed in full with what each one costs and how to fix it:
+All 31 of them, listed with what each one costs and how to fix it:
 **[RULES.md](RULES.md)**
 
 ## Usage
@@ -95,23 +95,27 @@ is how the live tool serves English, Persian and Arabic from one engine.
 node --experimental-strip-types --no-warnings test/audit-check.mjs
 ```
 
-Fifteen cases and a time budget. Seven are real bugs it must catch, three are
-malformed input it must survive, and five are **correct code it must stay
-silent on** — those last five are the ones worth having. A false positive on an
-experienced developer's working code costs more credibility than ten true
-findings earn.
+42 cases and a time budget. 22 are real bugs it must catch, 3 are malformed
+input it must survive, and **16 are correct code it must stay silent on** —
+those 16 are the ones worth having. A false positive on an experienced
+developer's working code costs more credibility than ten true findings earn.
+
+A case whose language the analyser fails to recognise is counted as a failure,
+not a pass. That rule exists because one "stays silent" case was quietly green
+for the wrong reason: no rule had run at all, so the silence proved nothing.
 
 The suite also fails if a 400-line file takes longer than 120 ms, because the
 analyser re-runs on every keystroke in the browser.
 
 ## Honest limits
 
-- **A clean result is not a certificate.** It means these sixteen patterns are
+- **A clean result is not a certificate.** It means these 31 patterns are
   absent. It says nothing about whether your logic is right or your edge real.
 - **It is heuristic, not a compiler.** It follows your helper functions, but it
   can still miss a pattern it has not seen. Every finding names a line so you
   can check it and dismiss it.
-- **Pine coverage is thinner than MQL coverage** — six checks against ten.
+- **Pine coverage is thinner than MQL coverage** — 6 checks against 25. The
+  roadmap closes this next.
 - **cTrader's C# is not covered.**
 
 ## Performance
@@ -134,8 +138,13 @@ are sharpest is systems that handle money and time correctly, and that disciplin
 does not stop at the execution engine — expert advisors and Pine indicators, but
 also the market-data pipelines under them, the dashboards and client portals on
 top, and the mobile and desktop clients people actually watch them from. This
-analyser exists because the same sixteen mistakes kept arriving in other people's
+analyser exists because the same handful of mistakes kept arriving in other people's
 code, and writing them down once was cheaper than explaining them again.
+
+Every rule here was checked against the official MetaQuotes and TradingView
+documentation before it was written. Three that we had planned turned out to be
+wrong — the most popular being “`iMA()` leaks a handle every tick”, which MQL5
+simply does not do — and were dropped or rewritten rather than shipped.
 
 If you find a failure pattern it should catch, open an issue with a minimal
 reproduction — that is the most useful contribution there is.

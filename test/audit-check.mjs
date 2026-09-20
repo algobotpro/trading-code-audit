@@ -168,6 +168,254 @@ plot(htf)`,
     never: [],
     src: `indicator("bad")\nh = request.security(syminfo.tickerid, "60", close)\nplot(h)`,
   },
+
+  /* ── دستهٔ ۱: محدودیت بروکر، پیمایش، زمان، هندل ────────────────── */
+  {
+    name: 'the step is handled but min/max is not',
+    must: ['lot-min-max-unclamped'], never: ['lot-not-normalised'],
+    src: `
+double Lot(double want){
+   double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   return MathFloor(want/step)*step;
+}
+void OnTick(){ double l = Lot(0.37); OrderSend(_Symbol,OP_BUY,l,Ask,3,0,0); }`,
+  },
+  {
+    name: 'step, min and max all handled — must stay silent',
+    must: [], never: ['lot-min-max-unclamped', 'lot-not-normalised'],
+    src: `
+double Lot(double want){
+   double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double lo   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double hi   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   return MathMin(hi, MathMax(lo, MathFloor(want/step)*step));
+}
+void OnTick(){ double l = Lot(0.37); OrderSend(_Symbol,OP_BUY,l,Ask,3,0,0); }`,
+  },
+  {
+    name: 'closing without ever reading the freeze level',
+    must: ['freeze-level'], never: [],
+    src: `void Close(){ OrderClose(OrderTicket(), OrderLots(), Bid, 3); }`,
+  },
+  {
+    name: 'stops level alone does not silence the freeze-level rule',
+    must: ['freeze-level'], never: [],
+    src: `
+void Close(){
+   int lvl = (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   OrderClose(OrderTicket(), OrderLots(), Bid, 3);
+}`,
+  },
+  {
+    name: 'freeze level is read — silent',
+    must: [], never: ['freeze-level'],
+    src: `
+void Close(){
+   int fz = (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
+   if(MathAbs(Bid-OrderStopLoss()) > fz*_Point) OrderClose(OrderTicket(), OrderLots(), Bid, 3);
+}`,
+  },
+  {
+    name: 'margin is never checked before sending',
+    must: ['margin-not-checked'], never: [],
+    src: `void OnTick(){ OrderSend(_Symbol,OP_BUY,0.1,Ask,3,0,0); }`,
+  },
+  {
+    name: 'margin is checked with OrderCalcMargin — silent',
+    must: [], never: ['margin-not-checked'],
+    src: `
+void OnTick(){
+   double need; OrderCalcMargin(ORDER_TYPE_BUY,_Symbol,0.1,Ask,need);
+   if(need < AccountInfoDouble(ACCOUNT_MARGIN_FREE)) OrderSend(_Symbol,OP_BUY,0.1,Ask,3,0,0);
+}`,
+  },
+  {
+    name: 'market order sent with zero slippage',
+    must: ['slippage-zero'], never: [],
+    src: `void OnTick(){ OrderSend(_Symbol,OP_BUY,0.1,Ask,0,0,0); }`,
+  },
+  {
+    name: 'MQL5 send never compares the filled volume',
+    must: ['partial-fill-unhandled'], never: [],
+    src: `
+void OnTick(){
+   MqlTradeRequest req; MqlTradeResult res;
+   OrderSend(req, res);
+   if(res.retcode != TRADE_RETCODE_DONE) Print("fail");
+}`,
+  },
+  {
+    name: 'filled volume is compared — silent',
+    must: [], never: ['partial-fill-unhandled'],
+    src: `
+void OnTick(){
+   MqlTradeRequest req; MqlTradeResult res;
+   OrderSend(req, res);
+   if(res.volume < req.volume) Print("partial fill: ", res.volume);
+}`,
+  },
+  {
+    name: 'retcode is inspected but requotes are not separated',
+    must: ['requote-unhandled'], never: [],
+    src: `
+void OnTick(){
+   MqlTradeRequest req; MqlTradeResult res;
+   if(!OrderSend(req,res)) Print(res.retcode);
+   if(res.volume < req.volume) Print("partial");
+}`,
+  },
+  {
+    name: 'requote is handled — silent',
+    must: [], never: ['requote-unhandled'],
+    src: `
+void OnTick(){
+   MqlTradeRequest req; MqlTradeResult res;
+   if(!OrderSend(req,res)){
+      if(res.retcode == TRADE_RETCODE_REQUOTE) Print("retry");
+      else Print(res.retcode);
+   }
+   if(res.volume < req.volume) Print("partial");
+}`,
+  },
+  {
+    name: 'every order goes out with no stop loss and none is set later',
+    must: ['no-sl-at-all'], never: [],
+    src: `void OnTick(){ OrderSend(_Symbol,OP_BUY,0.1,Ask,3,0,0); }`,
+  },
+  {
+    name: 'a stop loss is passed — silent',
+    must: [], never: ['no-sl-at-all'],
+    src: `void OnTick(){ double sl = Ask - 300*_Point; OrderSend(_Symbol,OP_BUY,0.1,Ask,3,sl,0); }`,
+  },
+  {
+    name: 'closing inside a loop that counts upward',
+    must: ['loop-forward-while-closing'], never: [],
+    src: `
+void CloseAll(){
+   for(int i = 0; i < OrdersTotal(); i++){
+      if(OrderSelect(i, SELECT_BY_POS) && OrderMagicNumber()==777)
+         OrderClose(OrderTicket(), OrderLots(), Bid, 3);
+   }
+}`,
+  },
+  {
+    name: 'the same loop counting down — silent',
+    must: [], never: ['loop-forward-while-closing'],
+    src: `
+void CloseAll(){
+   for(int i = OrdersTotal()-1; i >= 0; i--){
+      if(OrderSelect(i, SELECT_BY_POS) && OrderMagicNumber()==777)
+         OrderClose(OrderTicket(), OrderLots(), Bid, 3);
+   }
+}`,
+  },
+  {
+    name: 'history is read without HistorySelect',
+    must: ['history-select-missing'], never: [],
+    src: `
+void Report(){
+   for(int i=0; i<HistoryDealsTotal(); i++){ ulong t = HistoryDealGetTicket(i); Print(t); }
+}`,
+  },
+  {
+    name: 'HistorySelect is called first — silent',
+    must: [], never: ['history-select-missing'],
+    src: `
+void Report(){
+   if(!HistorySelect(0, TimeCurrent())) return;
+   for(int i=0; i<HistoryDealsTotal(); i++){ ulong t = HistoryDealGetTicket(i); Print(t); }
+}`,
+  },
+  {
+    name: 'HistoryDealSelect clears the list mid-loop',
+    must: ['history-select-clobbered'], never: [],
+    src: `
+void Report(){
+   HistorySelect(0, TimeCurrent());
+   for(int i=0; i<HistoryDealsTotal(); i++){
+      if(HistoryDealSelect(i)) Print(HistoryDealGetDouble(i, DEAL_PROFIT));
+   }
+}`,
+  },
+  {
+    name: 'trading gated on the local clock',
+    must: ['local-time-for-trading'], never: [],
+    src: `
+void OnTick(){
+   MqlDateTime dt; TimeToStruct(TimeLocal(), dt);
+   if(dt.hour == 9) OrderSend(_Symbol,OP_BUY,0.1,Ask,3,0,0);
+}`,
+  },
+  {
+    name: 'trading gated on server time — silent',
+    must: [], never: ['local-time-for-trading'],
+    src: `
+void OnTick(){
+   MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
+   if(dt.hour == 9) OrderSend(_Symbol,OP_BUY,0.1,Ask,3,0,0);
+}`,
+  },
+  {
+    name: 'CopyBuffer result thrown away',
+    must: ['copybuffer-return-ignored'], never: [],
+    src: `
+void OnTick(){
+   double buf[]; ArraySetAsSeries(buf, true);
+   CopyBuffer(h, 0, 0, 3, buf);
+   if(buf[0] > buf[1]) Print("up");
+}`,
+  },
+  {
+    name: 'CopyBuffer guarded on the count — silent',
+    must: [], never: ['copybuffer-return-ignored'],
+    src: `
+void OnTick(){
+   double buf[]; ArraySetAsSeries(buf, true);
+   if(CopyBuffer(h, 0, 0, 3, buf) != 3) return;
+   if(buf[0] > buf[1]) Print("up");
+}`,
+  },
+  {
+    name: 'copied array is never set as a series',
+    must: ['arraysetasseries-missing'], never: [],
+    src: `
+void OnTick(){
+   double buf[];
+   if(CopyBuffer(h, 0, 0, 3, buf) != 3) return;
+   if(buf[0] > buf[1]) Print("up");
+}`,
+  },
+  {
+    name: 'the series flag is set on a fixed-size array',
+    must: ['arraysetasseries-on-static'], never: [],
+    src: `
+void OnTick(){
+   double buf[10];
+   ArraySetAsSeries(buf, true);
+   if(CopyBuffer(h, 0, 0, 3, buf) != 3) return;
+}`,
+  },
+  {
+    name: 'RefreshRates left behind in an MQL5 port',
+    must: ['refreshrates-in-mql5'], never: [],
+    src: `
+void OnTick(){
+   MqlTradeRequest req; MqlTradeResult res;
+   Sleep(100);
+   RefreshRates();
+   OrderSend(req, res);
+}`,
+  },
+  {
+    name: 'RefreshRates in genuine MQL4 — silent',
+    must: [], never: ['refreshrates-in-mql5'],
+    src: `
+void OnTick(){
+   Sleep(100);
+   RefreshRates();
+   OrderSend(Symbol(), OP_BUY, 0.1, Ask, 3, 0, 0);
+}`,
+  },
   { name: 'source cut off mid-edit must not throw', must: [], never: [], src: `void OnTick(){ if(a){ OrderSend(_Symbol,` },
   { name: 'empty input must not throw', must: [], never: [], src: `` },
   { name: 'comments only must not throw', must: [], never: [], src: `// nothing\n/* at all */` },
@@ -186,6 +434,17 @@ for (const c of CASES) {
   const got = new Set(r.findings.map((f) => f.ruleId));
   const missing = c.must.filter((id) => !got.has(id));
   const wrong = c.never.filter((id) => got.has(id));
+
+  // ⚠️ یک تستِ «باید ساکت بماند» روی کدی که زبانش تشخیص داده نشده، هیچ
+  // چیزی را ثابت نمی‌کند: هیچ قاعده‌ای اجرا نشده، پس سکوت بی‌معنی است و
+  // تست الکی سبز می‌شود. این دقیقاً یک‌بار اتفاق افتاد و قاعدهٔ خرابی را
+  // پشت یک PASS پنهان کرد.
+  if (r.dialect === 'unknown' && (c.must.length || c.never.length)) {
+    failed++;
+    console.log(`  \x1b[31mFAIL\x1b[0m  ${c.name}`);
+    console.log('          dialect came back "unknown" — no rule ran, so this proves nothing');
+    continue;
+  }
   if (missing.length === 0 && wrong.length === 0) {
     console.log(`  \x1b[32mPASS\x1b[0m  ${c.name}`);
   } else {
