@@ -417,6 +417,61 @@ void OnTick(){
 }`,
   },
   { name: 'source cut off mid-edit must not throw', must: [], never: [], src: `void OnTick(){ if(a){ OrderSend(_Symbol,` },
+  {
+    name: 'an #include path is not a division',
+    must: [], never: ['zero-guard'],
+    src: `
+#include <Trade/Trade.mqh>
+CTrade trade;
+void OnTick(){
+   if(!MQLInfoInteger(MQL_TRADE_ALLOWED)) return;
+   if(!trade.Buy(0.1, _Symbol)) Print(trade.ResultRetcode());
+}`,
+  },
+  {
+    name: 'reading a dynamic array at index 0 is not a static declaration',
+    must: [], never: ['arraysetasseries-on-static'],
+    src: `
+void OnTick(){
+   double buf[];
+   ArraySetAsSeries(buf, true);
+   if(CopyBuffer(h, 0, 0, 3, buf) != 3) return;
+   if(buf[0] > buf[1]) Print("up");
+}`,
+  },
+  {
+    name: 'a multidimensional array cannot be a series either',
+    must: ['arraysetasseries-on-static'], never: [],
+    src: `
+void OnTick(){
+   double grid[][4];
+   ArraySetAsSeries(grid, true);
+   if(CopyBuffer(h, 0, 0, 3, grid) != 3) return;
+}`,
+  },
+  {
+    name: 'price changed handled by its bare number 10020 — silent',
+    must: [], never: ['requote-unhandled'],
+    src: `
+#include <Trade/Trade.mqh>
+CTrade trade;
+void OnTick(){
+   if(!trade.Buy(0.1, _Symbol)){
+      uint rc = trade.ResultRetcode();
+      if(rc == 10020) return;   // only the bare number, no constant names
+   }
+}`,
+  },
+  {
+    name: 'a helper file that only copies a buffer is still read as MQL',
+    must: ['copybuffer-return-ignored'], never: [],
+    src: `
+bool TrendUp(int h){
+   double ma[];
+   CopyBuffer(h, 0, 0, 2, ma);
+   return ma[0] > ma[1];
+}`,
+  },
   { name: 'empty input must not throw', must: [], never: [], src: `` },
   { name: 'comments only must not throw', must: [], never: [], src: `// nothing\n/* at all */` },
 ];

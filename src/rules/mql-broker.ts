@@ -159,7 +159,9 @@ export const mqlBroker: Rule[] = [
       const opens = orderOpens(program);
       if (opens.length === 0) return [];
       if (
-        /TRADE_RETCODE_REQUOTE|TRADE_RETCODE_PRICE_CHANGED|TRADE_RETCODE_PRICE_OFF|10004|10006|10021|ERR_REQUOTE|\b138\b|\b136\b/.test(
+        // 10020 همان TRADE_RETCODE_PRICE_CHANGED است و از این فهرست جا مانده بود،
+        // پس کسی که عدد خام را نوشته بود هشدار می‌گرفت. 135 هم همتای MQL4 آن است.
+        /TRADE_RETCODE_REQUOTE|TRADE_RETCODE_PRICE_CHANGED|TRADE_RETCODE_PRICE_OFF|\b1000[46]\b|\b1002[01]\b|ERR_REQUOTE|ERR_PRICE_CHANGED|ERR_OFF_QUOTES|\b13[568]\b/.test(
           all,
         )
       ) {
@@ -364,8 +366,15 @@ export const mqlBroker: Rule[] = [
         if (!first) return false;
         const name = textOf(program, first.from, first.to).trim();
         if (!/^[A-Za-z_]\w*$/.test(name)) return false;
-        // اعلانی با اندازهٔ ثابت: `double buf [ 10 ]`
-        return new RegExp(`\\b${name}\\s*\\[\\s*\\d+\\s*\\]`).test(all);
+        // اعلانی با اندازهٔ ثابت — `double buf [ 10 ]` — یا چندبعدی: `double m [ ] [ 4 ]`.
+        //
+        // ⚠️ نوع پیش از نام الزامی است. نسخهٔ قبلی فقط `buf[0]` را می‌گشت و
+        // هر **خواندنِ** آرایه با اندیس عددی را اعلان ایستا می‌دید — یعنی
+        // تقریباً هر اکسپرتی که `buf[0]` را می‌خواند این هشدار را می‌گرفت.
+        const T = '(?:double|float|int|uint|long|ulong|short|ushort|char|uchar|bool|string|datetime|color|Mql\\w+)';
+        return new RegExp(
+          `\\b${T}\\s+${name}\\s*\\[\\s*\\d+\\s*\\]|\\b${T}\\s+${name}\\s*\\[\\s*\\d*\\s*\\]\\s*\\[`,
+        ).test(all);
       });
       return firstLines(dirty, 2);
     },

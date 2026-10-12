@@ -27,6 +27,8 @@ export function detectDialect(src: string): Dialect {
     /\b(PositionsTotal|PositionSelect|PositionGetTicket|PositionGetDouble|PositionGetInteger)\b/.test(src) ||
     /\bHistory(Select|SelectByPosition|DealsTotal|OrdersTotal|DealGetTicket|OrderGetTicket|DealSelect|OrderSelect|DealGet\w+|OrderGet\w+)\b/.test(src) ||
     /\b(ArraySetAsSeries|ArrayGetAsSeries|BarsCalculated|IndicatorRelease|TimeToStruct|MqlDateTime|OrderCalcMargin|RefreshRates)\b/.test(src) ||
+    // یک ‎.mqh که فقط بافر اندیکاتور می‌خواند هیچ‌کدام از نشانه‌های بالا را نداشت
+    /\bCopy(Buffer|Rates|Time|Open|High|Low|Close|TickVolume|RealVolume|Spread|Ticks)\s*\(/.test(src) ||
     /\b(SymbolInfoDouble|SymbolInfoInteger|SymbolInfoString|MarketInfo|AccountBalance|AccountInfoDouble)\b/.test(src) ||
     /\b(MqlTick|MqlTradeRequest|MqlTradeResult|MqlRates|CTrade|CPositionInfo)\b/.test(src) ||
     /#property|#include\s*<|\bextern\s+(double|int|bool|string)\b|\binput\s+(double|int|bool|string|datetime|color)\b/.test(src) ||
