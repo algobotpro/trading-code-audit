@@ -36,8 +36,8 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 | id | severity | what it looks for |
 | --- | --- | --- |
-| `pine-lookahead-missing` | 🔴 critical | Higher-timeframe data requested without setting lookahead |
-| `pine-lookahead-on` | 🔴 critical | lookahead_on is switched on |
+| `pine-lookahead-missing` | 🔴 critical | Higher-timeframe data requested without choosing lookahead |
+| `pine-lookahead-on` | 🔴 critical | lookahead_on is used without a [1] offset |
 | `pine-no-offset` | 🔴 critical | Higher-timeframe value read without the [1] offset |
 | `pine-version` | ⚪ note | No //@version annotation |
 | `pine-calc-every-tick` | 🟡 warning | Strategy calculates on every tick |
@@ -49,7 +49,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 **Lot size is never normalised to the broker's volume step**
 
-*What it costs.* The broker rejects any volume that is not a multiple of its step, so the order simply never opens. It passes every backtest, because the tester accepts whatever volume you hand it.
+*What it costs.* The broker rejects any volume that is not a multiple of its step, so the order simply never opens. The Strategy Tester checks the step too, but only for the one symbol and broker you test on — so a backtest stays clean whenever the formula happens to land on that step, and the same code fails on a symbol or broker with a coarser one.
 
 *The fix.* Read SYMBOL_VOLUME_STEP, floor the lot to a multiple of it, then clamp between SYMBOL_VOLUME_MIN and SYMBOL_VOLUME_MAX before sending.
 
@@ -97,7 +97,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 **Position size is multiplied after a loss**
 
-*What it costs.* This is not a bug, it is a choice — but it is the choice that produces a beautiful equity curve and then removes the account in one losing streak. The simulator above shows what that distribution really looks like.
+*What it costs.* This is not a bug, it is a choice — but it is the choice that produces a beautiful equity curve and then removes the account in one losing streak.
 
 *The fix.* If it is deliberate, cap the number of steps and the maximum exposure, and test against the worst losing streak in the data rather than the average.
 
@@ -113,7 +113,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 **Sleep is called inside the tick handler**
 
-*What it costs.* The terminal runs all charts on one thread for an EA's events. Sleeping blocks incoming ticks, and in the Strategy Tester it is ignored entirely, so live and tested behaviour diverge.
+*What it costs.* While OnTick is asleep the EA handles nothing else: new ticks are not queued, so it wakes up and acts on a price from before the pause. In the Strategy Tester, Sleep does not actually wait, so the delay — and the stale price — never appear in a backtest.
 
 *The fix.* Use a timer event or a timestamp check instead of blocking, so the handler always returns quickly.
 
@@ -121,7 +121,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 **Division with no guard against a zero denominator**
 
-*What it costs.* Indicator buffers return zero before they have enough bars, and at that moment the result is infinity or a silent zero. The first trades after a restart are placed on nonsense values.
+*What it costs.* Indicator buffers can hold zero before they have enough bars, and a flat or single-tick bar has no range. Divide by that and, depending on a compiler setting, the program either stops with "zero divide" or carries on with infinity — and the first trades after a restart are placed on nonsense values.
 
 *The fix.* Check the denominator is meaningfully above zero before dividing, and return early when the indicator is not ready.
 
@@ -129,7 +129,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 **Lot size is stepped but never clamped to the broker's minimum and maximum**
 
-*What it costs.* You rounded to the volume step, so you thought about this — but a broker rejects anything below SYMBOL_VOLUME_MIN or above SYMBOL_VOLUME_MAX just as hard. The order simply never opens, and the tester never shows it because the tester accepts whatever volume you hand it.
+*What it costs.* You rounded to the volume step, so you thought about this — but a broker rejects anything below SYMBOL_VOLUME_MIN or above SYMBOL_VOLUME_MAX just as hard. The order simply never opens. A backtest only checks the limits of the symbol it runs on, so a lot that shrinks below the minimum on a small account, or grows past the maximum, never shows there.
 
 *The fix.* After flooring to the step, clamp: MathMin(SYMBOL_VOLUME_MAX, MathMax(SYMBOL_VOLUME_MIN, lot)). Read both with SymbolInfoDouble.
 
@@ -171,7 +171,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 *What it costs.* Your code does look at the return code, so it is being careful — but a requote is not a failure, it is the server saying “the price moved, ask again”. Treated as a failure, the entry is abandoned. Treated as a success, the robot thinks it is in a trade. Either way the behaviour on a fast market differs from the behaviour in the tester.
 
-*The fix.* Branch on TRADE_RETCODE_REQUOTE and TRADE_RETCODE_PRICE_CHANGED (10004, 10006, 10021 — 138 and 136 in MQL4): refresh the price and retry a bounded number of times, then give up loudly.
+*The fix.* Branch on TRADE_RETCODE_REQUOTE, TRADE_RETCODE_PRICE_CHANGED and TRADE_RETCODE_PRICE_OFF (10004, 10020, 10021 — 138, 135 and 136 in MQL4): refresh the price and retry a bounded number of times, then give up loudly.
 
 ### `no-sl-at-all`
 
@@ -247,19 +247,19 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 ### `pine-lookahead-missing`
 
-**Higher-timeframe data requested without setting lookahead**
+**Higher-timeframe data requested without choosing lookahead**
 
-*What it costs.* The default reads values that were not knowable at the time, so the backtest sees the future and the live chart repaints underneath the trader. Results look excellent and cannot be traded.
+*What it costs.* The default, lookahead_off, does not read the future — but it is not the non-repainting form either. Without an offset the live bar shows a higher-timeframe value that is still forming; with [1] the historical bars run one higher-timeframe bar behind what the live chart showed. Either way, the history you test is not what traded.
 
-*The fix.* Pass lookahead = barmerge.lookahead_off explicitly, and take the previous bar with [1].
+*The fix.* Use the form TradingView documents as non-repainting: request.security(syminfo.tickerid, tf, expr[1], lookahead = barmerge.lookahead_on).
 
 ### `pine-lookahead-on`
 
-**lookahead_on is switched on**
+**lookahead_on is used without a [1] offset**
 
-*What it costs.* This deliberately reads future data. Anything it produces is unusable for trading, however good the backtest looks.
+*What it costs.* On historical bars this returns the final value of a higher-timeframe bar before that bar had closed — data from the future. The backtest looks excellent and cannot be traded.
 
-*The fix.* Use barmerge.lookahead_off unless you are drawing something historical that will never generate a signal.
+*The fix.* Offset the requested expression by one bar — close[1] instead of close — and keep lookahead_on. That pair is the non-repainting form TradingView documents.
 
 ### `pine-no-offset`
 
@@ -267,7 +267,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 *What it costs.* The current higher-timeframe bar is still forming, so its value keeps changing until it closes. Signals appear and disappear in real time even with lookahead off.
 
-*The fix.* Request the expression with a [1] offset so you only ever act on a bar that has closed.
+*The fix.* Request the expression with a [1] offset, together with lookahead = barmerge.lookahead_on, so you only act on a bar that has closed and history matches what traded live.
 
 ### `pine-version`
 

@@ -472,6 +472,22 @@ bool TrendUp(int h){
    return ma[0] > ma[1];
 }`,
   },
+  {
+    name: 'the non-repainting form TradingView documents — silent',
+    must: [], never: ['pine-lookahead-on', 'pine-lookahead-missing', 'pine-no-offset'],
+    src: `//@version=6
+indicator("HTF close", overlay = true)
+htf = request.security(syminfo.tickerid, "D", close[1], lookahead = barmerge.lookahead_on)
+plot(htf)`,
+  },
+  {
+    name: 'lookahead_on without an offset reads the future',
+    must: ['pine-lookahead-on'], never: [],
+    src: `//@version=6
+indicator("HTF close", overlay = true)
+htf = request.security(syminfo.tickerid, "D", close, lookahead = barmerge.lookahead_on)
+plot(htf)`,
+  },
   { name: 'empty input must not throw', must: [], never: [], src: `` },
   { name: 'comments only must not throw', must: [], never: [], src: `// nothing\n/* at all */` },
 ];

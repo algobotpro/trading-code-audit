@@ -20,7 +20,23 @@ export const pineRules: Rule[] = [
     id: 'pine-lookahead-on',
     severity: 'critical',
     dialect: 'pine',
-    run: ({ find }) => find(/lookahead\s*=\s*barmerge\.lookahead_on/).slice(0, 2),
+    /**
+     * فقط `lookahead_on` **بدون** جابه‌جایی `[1]`.
+     *
+     * نسخهٔ قبلی هر `lookahead_on` را بحرانی علامت می‌زد — از جمله
+     * `request.security(..., close[1], lookahead = barmerge.lookahead_on)`،
+     * که مستندات خود TradingView (صفحهٔ Repainting) دقیقاً همان را تنها
+     * شکل بدون repaint می‌داند. نشت آینده فقط وقتی است که عبارت جابه‌جا
+     * نشده باشد: روی کندل‌های تاریخی، مقدار نهایی کندل تایم‌فریم بالاتر
+     * پیش از بسته شدنش خوانده می‌شود.
+     */
+    run: ({ lines }) =>
+      lines
+        .map((l, i) =>
+          /lookahead\s*=\s*barmerge\.lookahead_on/.test(l) && !/\[\s*[1-9]\d*\s*\]/.test(l) ? i + 1 : 0,
+        )
+        .filter((n) => n > 0)
+        .slice(0, 2),
   },
   {
     id: 'pine-no-offset',
