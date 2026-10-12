@@ -224,12 +224,12 @@ export const mqlCore: Rule[] = [
       if (hits.length === 0) {
         // بدون ساختار قابل‌تشخیص، همان بررسی قدیمی.
         //
-        // ⚠️ خطوط پیش‌پردازنده کنار گذاشته می‌شوند: `#include <Trade/Trade.mqh>`
+        // ⚠️ خطوط #include و #import کنار گذاشته می‌شوند: `#include <Trade/Trade.mqh>`
         // یک مسیر است، نه تقسیم — ولی همین الگو را داشت و تقریباً هر اکسپرت
         // MQL5 که CTrade به‌کار می‌برد روی خط اولش این هشدار را می‌گرفت.
         const divides = /\/\s*[A-Za-z_]\w*/;
         const at = lines
-          .map((l, i) => (!/^\s*#/.test(l) && divides.test(l) ? i + 1 : 0))
+          .map((l, i) => (!/^\s*#\s*(include|import)\b/.test(l) && divides.test(l) ? i + 1 : 0))
           .filter((n) => n > 0);
         if (at.length === 0 || has(/(!=|>=|<=|>|<|==)\s*0(\.0)?\b/)) return [];
         return at.slice(0, 1);

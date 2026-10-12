@@ -113,7 +113,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 **Sleep is called inside the tick handler**
 
-*What it costs.* While OnTick is asleep the EA handles nothing else: new ticks are not queued, so it wakes up and acts on a price from before the pause. In the Strategy Tester, Sleep does not actually wait, so the delay — and the stale price — never appear in a backtest.
+*What it costs.* While OnTick is asleep the EA handles nothing else, and ticks that arrive meanwhile are not queued; any price read before the pause — and MQL4's Ask and Bid until RefreshRates — is stale when it wakes. In the Strategy Tester, Sleep costs no real time, so the backtest never shows what the pause costs live.
 
 *The fix.* Use a timer event or a timestamp check instead of blocking, so the handler always returns quickly.
 
@@ -129,7 +129,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 **Lot size is stepped but never clamped to the broker's minimum and maximum**
 
-*What it costs.* You rounded to the volume step, so you thought about this — but a broker rejects anything below SYMBOL_VOLUME_MIN or above SYMBOL_VOLUME_MAX just as hard. The order simply never opens. A backtest only checks the limits of the symbol it runs on, so a lot that shrinks below the minimum on a small account, or grows past the maximum, never shows there.
+*What it costs.* You rounded to the volume step, so you thought about this — but a broker rejects anything below SYMBOL_VOLUME_MIN or above SYMBOL_VOLUME_MAX just as hard. The order simply never opens. A backtest checks the limits of the symbol it runs on, but only for the lots that test actually produces — so a lot that shrinks below the minimum on a smaller account, or grows past the maximum on a larger one or another broker, can pass every backtest and still be rejected live.
 
 *The fix.* After flooring to the step, clamp: MathMin(SYMBOL_VOLUME_MAX, MathMax(SYMBOL_VOLUME_MIN, lot)). Read both with SymbolInfoDouble.
 
@@ -139,13 +139,13 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 *What it costs.* The freeze level is not the stops level. The stops level says where you may put a stop; the freeze level says when you may no longer touch something that already exists. Inside that band the server refuses to close, modify or cancel — retcode 10029 — and your exit does not happen at the moment you most need it to.
 
-*The fix.* Read SYMBOL_TRADE_FREEZE_LEVEL and check the distance before modifying or closing. Many brokers report zero, but some enforce the stops level on modification anyway, so MathMax(stops_level, freeze_level) is the safe distance.
+*The fix.* Read SYMBOL_TRADE_FREEZE_LEVEL and check the distance before modifying or closing. A new stop or target you set by modification must also respect SYMBOL_TRADE_STOPS_LEVEL, so MathMax(stops_level, freeze_level) is the safe distance.
 
 ### `margin-not-checked`
 
 **Orders are sent without checking that the account can afford them**
 
-*What it costs.* The order is rejected for insufficient margin, and whatever your code does next assumes a position that does not exist. This is the one pre-send check MetaQuotes requires for publication in the Market, which is a fair signal of how often it is skipped.
+*What it costs.* The order is rejected for insufficient margin, and whatever your code does next assumes a position that does not exist. Checking funds before a trade is one of the checks MetaQuotes lists for EAs published in its Market.
 
 *The fix.* Call OrderCalcMargin for the intended volume and compare it to AccountInfoDouble(ACCOUNT_MARGIN_FREE) before sending. Decide explicitly what to do when it does not fit — skipping the trade is a decision, silently failing is not.
 
@@ -153,7 +153,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 **Market orders are sent with zero slippage**
 
-*What it costs.* With a deviation of zero the server must fill at exactly the price you asked for. On a quiet pair it usually can. Around news, or on any broker with real execution, it cannot — and the order is rejected instead of filled. The strategy does not lose money; it simply does not trade, on precisely the days it was written for.
+*What it costs.* On a symbol with instant execution, a deviation of zero means the server fills at exactly the price you asked for or not at all. On a quiet pair it usually can. Around news it cannot — the order is requoted instead of filled. The strategy does not lose money; it simply does not trade, on precisely the days it was written for.
 
 *The fix.* Set a deviation you can live with, in points, and handle the requote return codes rather than hoping for an exact fill.
 
@@ -193,7 +193,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 **Trade history is read without selecting it first**
 
-*What it costs.* HistorySelect builds the history list your program can see. Without it the list is empty and HistoryDealGetTicket returns zero — with no error at all. The loop runs, finds nothing, and the robot concludes it has no closed trades. This is the usual reason an EA cannot find its own history.
+*What it costs.* HistorySelect builds the history list your program can see. Without it there is no selected history — or only a stale one — and HistoryDealGetTicket returns zero, its failure value. The program keeps running, the loop finds nothing, and the robot concludes it has no closed trades.
 
 *The fix.* Call HistorySelect(from, to) — or HistorySelectByPosition(position_id) — before any HistoryDeal* or HistoryOrder* call, and check that it returned true.
 
@@ -201,9 +201,9 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 **The history list is destroyed in the middle of the loop that walks it**
 
-*What it costs.* HistoryOrderSelect and HistoryDealSelect do not read from the list HistorySelect built — they clear it and put a single item in it. Calling either inside a loop over HistoryDealsTotal() empties the collection while you are iterating it, so the loop stops early or reads the wrong rows.
+*What it costs.* HistoryDealSelect does not pick an item from the deal list HistorySelect built — it clears that list and puts a single deal in it; HistoryOrderSelect does the same to the order list. Calling HistoryDealSelect inside a loop over HistoryDealsTotal() (or HistoryOrderSelect inside a loop over HistoryOrdersTotal()) empties the list while you are iterating it, so the loop stops after one item.
 
-*The fix.* Inside the loop use HistoryDealGetTicket(i) and the HistoryDealGet* accessors, which read from the existing list. Keep HistoryOrderSelect and HistoryDealSelect outside any such loop.
+*The fix.* Inside a deal loop use HistoryDealGetTicket(i) and the HistoryDealGet* accessors, which read from the existing list. Never call HistoryDealSelect inside a HistoryDealsTotal() loop, or HistoryOrderSelect inside a HistoryOrdersTotal() loop.
 
 ### `local-time-for-trading`
 
@@ -281,7 +281,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 **Strategy calculates on every tick**
 
-*What it costs.* Backtest and live behaviour will not match: history has no intrabar ticks, so the tested results come from a different signal sequence than the one that trades.
+*What it costs.* Backtest and live behaviour will not match: by default history is calculated once per bar, so the tested results come from a different signal sequence than the one that trades.
 
 *The fix.* Leave it off unless the strategy genuinely needs intrabar execution, and if it does, validate on a lower timeframe instead.
 

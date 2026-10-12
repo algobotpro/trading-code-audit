@@ -154,7 +154,7 @@ void OnTick(){
 }`,
   },
   {
-    name: 'Pine that reads a closed higher-timeframe bar correctly',
+    name: 'explicit lookahead_off with [1] is not flagged by these rules (not the documented form: history lags one HTF bar)',
     must: [],
     never: ['pine-lookahead-missing', 'pine-no-offset', 'pine-version'],
     src: `//@version=6
@@ -487,6 +487,98 @@ plot(htf)`,
 indicator("HTF close", overlay = true)
 htf = request.security(syminfo.tickerid, "D", close, lookahead = barmerge.lookahead_on)
 plot(htf)`,
+  },
+  {
+    name: 'an offset on the RESULT does not stop a future leak',
+    must: ['pine-lookahead-on', 'pine-no-offset'], never: [],
+    src: `//@version=6
+indicator("HTF", overlay = true)
+htf = request.security(syminfo.tickerid, "D", close, lookahead = barmerge.lookahead_on)[1]
+plot(htf)`,
+  },
+  {
+    name: 'an unrelated [1] on the same line does not stop a future leak',
+    must: ['pine-lookahead-on'], never: [],
+    src: `//@version=6
+indicator("HTF", overlay = true)
+up = close > close[1] and request.security(syminfo.tickerid, "D", close, lookahead = barmerge.lookahead_on) > open
+plot(up ? 1 : 0)`,
+  },
+  {
+    name: 'the documented form split over several lines — silent',
+    must: [], never: ['pine-lookahead-on', 'pine-lookahead-missing', 'pine-no-offset'],
+    src: `//@version=6
+indicator("HTF", overlay = true)
+htf = request.security(
+     syminfo.tickerid, "D",
+     ta.ema(close, 20)[1],
+     lookahead = barmerge.lookahead_on)
+plot(htf)`,
+  },
+  {
+    name: 'a tuple of offset values and a [2] offset — silent',
+    must: [], never: ['pine-lookahead-on', 'pine-no-offset'],
+    src: `//@version=6
+indicator("HTF", overlay = true)
+[h, l] = request.security(syminfo.tickerid, "W", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+c2 = request.security(syminfo.tickerid, "D", close[2], lookahead = barmerge.lookahead_on)
+plot(h)`,
+  },
+  {
+    name: 'HistoryOrderSelect inside a deal loop reads the parent order — silent',
+    must: [], never: ['history-select-clobbered'],
+    src: `
+void Scan(){
+   if(!HistorySelect(0, TimeCurrent())) return;
+   for(int i = 0; i < HistoryDealsTotal(); i++){
+      ulong d = HistoryDealGetTicket(i);
+      ulong o = HistoryDealGetInteger(d, DEAL_ORDER);
+      if(HistoryOrderSelect(o)) Print(HistoryOrderGetInteger(o, ORDER_TYPE));
+   }
+}`,
+  },
+  {
+    name: 'HistoryOrderSelect inside an order loop empties that list',
+    must: ['history-select-clobbered'], never: [],
+    src: `
+void Scan(){
+   if(!HistorySelect(0, TimeCurrent())) return;
+   for(int i = 0; i < HistoryOrdersTotal(); i++){
+      ulong o = HistoryOrderGetTicket(i);
+      if(HistoryOrderSelect(o)) Print(o);
+   }
+}`,
+  },
+  {
+    name: 'static arrays in a declarator list and of a struct type',
+    must: ['arraysetasseries-on-static'], never: [],
+    src: `
+struct S { double v; };
+void OnTick(){
+   double a[10], buf[10];
+   S rows[5];
+   ArraySetAsSeries(buf, true);
+   ArraySetAsSeries(rows, true);
+   if(CopyBuffer(h, 0, 0, 3, buf) != 3) return;
+}`,
+  },
+  {
+    name: 'a bare 135 used as a period does not count as handling a requote',
+    must: ['requote-unhandled'], never: [],
+    src: `
+#include <Trade/Trade.mqh>
+CTrade trade;
+int ma = iMA(_Symbol, _Period, 135, 0, MODE_SMA, PRICE_CLOSE);
+void OnTick(){
+   if(!trade.Buy(0.1, _Symbol)) Print("failed ", trade.ResultRetcode());
+}`,
+  },
+  {
+    name: 'a division inside a #define is still a division',
+    must: ['zero-guard'], never: [],
+    src: `
+#define RATIO(a, b) (a / b)
+void OnTick(){ double r = RATIO(High[0], spread); Print(r); }`,
   },
   { name: 'empty input must not throw', must: [], never: [], src: `` },
   { name: 'comments only must not throw', must: [], never: [], src: `// nothing\n/* at all */` },
