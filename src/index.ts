@@ -6,11 +6,15 @@ import type { AuditResult, Dialect, Finding, RuleContext, Severity } from './typ
 export type { AuditResult, Finding, Severity, Dialect } from './types';
 
 /** تشخیص زبان از روی نشانه‌های قطعی، نه حدس */
-export function detectDialect(src: string): Dialect {
+export function detectDialect(src: string, raw = src): Dialect {
+  // ⚠️ `//@version` خودش یک کامنت است، و `audit()` نسخهٔ ماسک‌شده را به این
+  // تابع می‌دهد — پس آن نشانه همیشه پاک شده بود و هیچ‌وقت پیدا نمی‌شد. حالا
+  // روی منبع خام سنجیده می‌شود. `study()` و `security()` هم شکل‌های نسخهٔ ۴ و
+  // قدیمی‌ترند؛ بدون آن‌ها یک اسکریپت v2 «زبان ناشناخته» می‌گرفت و هیچ قاعده‌ای
+  // رویش اجرا نمی‌شد.
   if (
-    /\/\/@version\s*=|\bindicator\s*\(|\bstrategy\s*\(|\brequest\.security\b|\bplotshape\b/.test(
-      src,
-    )
+    /^\s*\/\/@version\s*=/m.test(raw) ||
+    /\bindicator\s*\(|\bstrategy\s*\(|\bstudy\s*\(|\b(request\.)?security\s*\(|\bplotshape\b/.test(src)
   ) {
     return 'pine';
   }
@@ -50,7 +54,7 @@ export function audit(source: string): AuditResult {
   const raw = source.split('\n');
   const masked = maskCommentsAndStrings(source);
   const lines = masked.split('\n');
-  const dialect = detectDialect(masked);
+  const dialect = detectDialect(masked, source);
 
   const ctx: RuleContext = {
     program: analyse(source, dialect),

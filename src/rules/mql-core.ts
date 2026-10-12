@@ -147,11 +147,16 @@ export const mqlCore: Rule[] = [
     severity: 'critical',
     dialect: 'mql',
     // نام متغیر معمولاً `currentLot` است نه `lot`، پس مرز واژه قبل از
-    // «lot» کافی نیست و باید پیشوند را هم قبول کنیم
+    // «lot» کافی نیست و باید پیشوند را هم قبول کنیم.
+    //
+    // ضریب: خودِ عدد ۲ (نه ۲۰ و نه ۲۵۰ — نسخهٔ قبلی `* 20` را هم می‌گرفت)، یا
+    // نامی که multiplier، factor یا martin را **در خودش** دارد، نه فقط در
+    // ابتدایش — `InpLotMultiplier` و `InpFactor` نامی‌اند که آدم‌ها واقعاً
+    // می‌گذارند، و نسخهٔ قبلی هر دو را نمی‌دید.
     run: ({ lines }) =>
       lines
         .map((l, i) =>
-          /\b\w*(lot|lots|volume)\w*\s*(\*=|=[^;=]*\*)[^;]*\b(2|multiplier|factor|martin)/i.test(l)
+          /\b\w*(lot|lots|volume)\w*\s*(\*=|=[^;=]*\*)\s*(2(\.0*)?(?![\d.])|\w*(multiplier|factor|martin)\w*)/i.test(l)
             ? i + 1
             : 0,
         )

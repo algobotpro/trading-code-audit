@@ -68,11 +68,15 @@ export const pineRules: Rule[] = [
      --------------------------------------------------------------- */
   {
     id: 'pine-lookahead-missing',
-    severity: 'critical',
+    severity: 'warning',
     dialect: 'pine',
     /**
      * پیش‌فرض `lookahead_off` است و آینده را نمی‌خواند — ولی شکل بدون repaint
      * هم نیست. فراخوانی‌ای که lookahead را انتخاب نکرده علامت می‌خورد.
+     *
+     * «هشدار»، نه «بحرانی»: نشت آینده‌ای در کار نیست، فقط تاریخچه با زمان
+     * واقعی نمی‌خواند. در نسخهٔ ۱ و ۲، که پیش‌فرض آینده را می‌خواند، همان
+     * فراخوانی را pine-lookahead-on به‌عنوان بحرانی می‌گیرد.
      */
     run: ({ masked }) =>
       [...new Set(securityCalls(masked).filter((c) => c.lookahead === null).map((c) => c.line))].slice(0, 2),
@@ -90,18 +94,23 @@ export const pineRules: Rule[] = [
      * باشد: روی کندل‌های تاریخی، مقدار نهایی کندل تایم‌فریم بالاتر پیش از
      * بسته شدنش خوانده می‌شود.
      */
-    run: ({ masked }) =>
-      [
+    run: ({ masked, raw }) => {
+      // در نسخهٔ ۱ و ۲ (و اسکریپت بدون `//@version`، که نسخهٔ ۱ فرض می‌شود)
+      // پیش‌فرض lookahead عملاً روشن بود؛ پس آنجا نبودِ lookahead همان نشت است.
+      const v = /\/\/@version\s*=\s*(\d+)/.exec(raw.join('\n'));
+      const legacyDefaultOn = !v || Number(v[1]) < 3;
+      return [
         ...new Set(
           securityCalls(masked)
-            .filter((c) => c.lookahead === 'on' && !OFFSET.test(c.expression))
+            .filter((c) => (c.lookahead === 'on' || (c.lookahead === null && legacyDefaultOn)) && !OFFSET.test(c.expression))
             .map((c) => c.lookaheadLine),
         ),
-      ].slice(0, 2),
+      ].slice(0, 2);
+    },
   },
   {
     id: 'pine-no-offset',
-    severity: 'critical',
+    severity: 'warning',
     dialect: 'pine',
     run: ({ masked }) =>
       [...new Set(securityCalls(masked).filter((c) => !OFFSET.test(c.expression)).map((c) => c.line))].slice(0, 2),

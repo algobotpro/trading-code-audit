@@ -36,9 +36,9 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 | id | severity | what it looks for |
 | --- | --- | --- |
-| `pine-lookahead-missing` | 🔴 critical | Higher-timeframe data requested without choosing lookahead |
+| `pine-lookahead-missing` | 🟡 warning | Higher-timeframe data requested without choosing lookahead |
 | `pine-lookahead-on` | 🔴 critical | lookahead_on is used without a [1] offset |
-| `pine-no-offset` | 🔴 critical | Higher-timeframe value read without the [1] offset |
+| `pine-no-offset` | 🟡 warning | Higher-timeframe value read without the [1] offset |
 | `pine-version` | ⚪ note | No //@version annotation |
 | `pine-calc-every-tick` | 🟡 warning | Strategy calculates on every tick |
 | `pine-repainting-varip` | ⚪ note | varip is used |
@@ -131,7 +131,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 *What it costs.* You rounded to the volume step, so you thought about this — but a broker rejects anything below SYMBOL_VOLUME_MIN or above SYMBOL_VOLUME_MAX just as hard. The order simply never opens. A backtest checks the limits of the symbol it runs on, but only for the lots that test actually produces — so a lot that shrinks below the minimum on a smaller account, or grows past the maximum on a larger one or another broker, can pass every backtest and still be rejected live.
 
-*The fix.* After flooring to the step, clamp: MathMin(SYMBOL_VOLUME_MAX, MathMax(SYMBOL_VOLUME_MIN, lot)). Read both with SymbolInfoDouble.
+*The fix.* After flooring to the step, read SYMBOL_VOLUME_MIN and SYMBOL_VOLUME_MAX with SymbolInfoDouble. Cap a lot above the maximum; skip the trade when it is below the minimum, rather than silently raising the risk.
 
 ### `freeze-level`
 
@@ -275,7 +275,7 @@ Generated from the analyser's own rule table, so it cannot drift from the code.
 
 *What it costs.* TradingView falls back to version 1, where much of the modern language is unavailable and behaviour differs from what the code appears to say.
 
-*The fix.* Put //@version=6 on the first line.
+*The fix.* Declare //@version=6 at the top of the script.
 
 ### `pine-calc-every-tick`
 
