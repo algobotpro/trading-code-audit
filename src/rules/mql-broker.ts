@@ -159,7 +159,11 @@ export const mqlBroker: Rule[] = [
       const opens = orderOpens(program);
       if (opens.length === 0) return [];
       if (
-        /TRADE_RETCODE_REQUOTE|TRADE_RETCODE_PRICE_CHANGED|TRADE_RETCODE_PRICE_OFF|10004|10006|10021|ERR_REQUOTE|\b138\b|\b136\b/.test(
+        // 10020 همان TRADE_RETCODE_PRICE_CHANGED است و از این فهرست جا مانده بود،
+        // پس کسی که عدد خام را نوشته بود هشدار می‌گرفت. 135 هم همتای MQL4 آن است.
+        // عدد خام فقط وقتی حساب است که با چیزی مقایسه شده باشد — `135` به‌عنوان
+        // دوره یا فاصله نباید این قاعده را ساکت کند.
+        /TRADE_RETCODE_REQUOTE|TRADE_RETCODE_PRICE_CHANGED|TRADE_RETCODE_PRICE_OFF|ERR_REQUOTE|ERR_PRICE_CHANGED|ERR_OFF_QUOTES|(?:==|!=|\bcase)\s*(?:1000[46]|1002[01]|13[568])\b|\b(?:1000[46]|1002[01]|13[568])\s*(?:==|!=)/.test(
           all,
         )
       ) {
@@ -256,19 +260,24 @@ export const mqlBroker: Rule[] = [
     severity: 'critical',
     dialect: 'mql',
     /**
-     * `HistoryOrderSelect()` و `HistoryDealSelect()` فهرستی را که
-     * `HistorySelect()` ساخته **پاک می‌کنند** و فقط یک مورد در آن
-     * می‌گذارند. صدا زدنشان داخل حلقه‌ای که روی `HistoryDealsTotal()`
-     * می‌چرخد، یعنی فهرست وسط پیمایش زیر پای حلقه خالی می‌شود.
+     * `HistoryDealSelect()` فهرست معامله‌هایی را که `HistorySelect()` ساخته
+     * **پاک می‌کند** و فقط یک معامله در آن می‌گذارد؛ `HistoryOrderSelect()`
+     * همین کار را با فهرست سفارش‌ها می‌کند. صدا زدن هر کدام داخل حلقه‌ای که
+     * روی فهرست **خودش** می‌چرخد، یعنی فهرست وسط پیمایش زیر پای حلقه خالی می‌شود.
      */
     run: ({ program }) => {
       const hits: number[] = [];
       for (const b of program.blocks) {
         if (b.kind !== 'loop') continue;
         const head = textOf(program, Math.max(0, b.from - 40), b.from);
-        if (!/History(Deals|Orders)Total/.test(head)) continue;
         const body = textOf(program, b.from, b.to);
-        if (!/\b(HistoryOrderSelect|HistoryDealSelect)\b/.test(body)) continue;
+        // هر تابع فقط فهرست **خودش** را پاک می‌کند: HistoryDealSelect فهرست
+        // معامله‌ها را، HistoryOrderSelect فهرست سفارش‌ها را. پس
+        // HistoryOrderSelect داخل حلقه‌ای روی معامله‌ها — برای خواندن سفارشِ
+        // والد یک معامله — درست است و نباید علامت بخورد.
+        const deals = /HistoryDealsTotal/.test(head) && /\bHistoryDealSelect\b/.test(body);
+        const orders = /HistoryOrdersTotal/.test(head) && /\bHistoryOrderSelect\b/.test(body);
+        if (!deals && !orders) continue;
         hits.push(program.toks[b.from]?.line ?? b.line);
       }
       return [...new Set(hits)].slice(0, 2);
@@ -364,8 +373,20 @@ export const mqlBroker: Rule[] = [
         if (!first) return false;
         const name = textOf(program, first.from, first.to).trim();
         if (!/^[A-Za-z_]\w*$/.test(name)) return false;
-        // اعلانی با اندازهٔ ثابت: `double buf [ 10 ]`
-        return new RegExp(`\\b${name}\\s*\\[\\s*\\d+\\s*\\]`).test(all);
+        // اعلانی با اندازهٔ ثابت — `double buf [ 10 ]` — یا چندبعدی: `double m [ ] [ 4 ]`.
+        //
+        // ⚠️ نوع پیش از نام الزامی است. نسخهٔ قبلی فقط `buf[0]` را می‌گشت و
+        // هر **خواندنِ** آرایه با اندیس عددی را اعلان ایستا می‌دید — یعنی
+        // تقریباً هر اکسپرتی که `buf[0]` را می‌خواند این هشدار را می‌گرفت.
+        // نوع هر شناسه‌ای می‌تواند باشد (ساختار کاربر هم: `S buf[10]`)، به‌جز
+        // کلیدواژه‌هایی که پیش از یک خواندن می‌آیند. اعلان‌های چندتایی هم:
+        // `double a[10], buf[10]` — مقداردهی اولیهٔ قبلی‌ها نمی‌تواند پرانتز
+        // داشته باشد، تا ویرگولِ داخل یک فراخوانی با ویرگولِ اعلان قاطی نشود.
+        const T = '(?!(?:return|else|case|delete|new|sizeof)\\b)[A-Za-z_]\\w*';
+        const prev = '(?:[A-Za-z_]\\w*\\s*(?:\\[[^\\]]*\\]\\s*)*(?:=[^,;(){}]*)?,\\s*)*';
+        return new RegExp(
+          `\\b${T}\\s+${prev}${name}\\s*\\[\\s*\\d+\\s*\\]|\\b${T}\\s+${prev}${name}\\s*\\[\\s*\\d*\\s*\\]\\s*\\[`,
+        ).test(all);
       });
       return firstLines(dirty, 2);
     },

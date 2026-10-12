@@ -195,7 +195,7 @@ export const mqlCore: Rule[] = [
      * تقسیم بر متغیری که در همان تابع هیچ‌جا در برابر صفر بررسی نشده.
      * قبلاً یک `!= 0` در هر گوشهٔ فایل کافی بود تا کل قاعده ساکت شود.
      */
-    run: ({ program, find, has }) => {
+    run: ({ program, lines, has }) => {
       const GUARD = /(!=|>=|<=|>|<|==)\s*0(\.0)?\b|MathAbs|fabs/i;
       const hits: number[] = [];
       for (const s of program.stmts) {
@@ -222,10 +222,17 @@ export const mqlCore: Rule[] = [
         }
       }
       if (hits.length === 0) {
-        // بدون ساختار قابل‌تشخیص، همان بررسی قدیمی
+        // بدون ساختار قابل‌تشخیص، همان بررسی قدیمی.
+        //
+        // ⚠️ خطوط #include و #import کنار گذاشته می‌شوند: `#include <Trade/Trade.mqh>`
+        // یک مسیر است، نه تقسیم — ولی همین الگو را داشت و تقریباً هر اکسپرت
+        // MQL5 که CTrade به‌کار می‌برد روی خط اولش این هشدار را می‌گرفت.
         const divides = /\/\s*[A-Za-z_]\w*/;
-        if (!has(divides) || has(/(!=|>=|<=|>|<|==)\s*0(\.0)?\b/)) return [];
-        return find(divides).slice(0, 1);
+        const at = lines
+          .map((l, i) => (!/^\s*#\s*(include|import)\b/.test(l) && divides.test(l) ? i + 1 : 0))
+          .filter((n) => n > 0);
+        if (at.length === 0 || has(/(!=|>=|<=|>|<|==)\s*0(\.0)?\b/)) return [];
+        return at.slice(0, 1);
       }
       return [...new Set(hits)].slice(0, 2);
     },
