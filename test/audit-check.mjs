@@ -580,6 +580,52 @@ void OnTick(){
 #define RATIO(a, b) (a / b)
 void OnTick(){ double r = RATIO(High[0], spread); Print(r); }`,
   },
+  {
+    name: 'a healthy MQL4 EA that uses SymbolInfoDouble and RefreshRates — silent',
+    must: [], never: ['refreshrates-in-mql5'],
+    src: `
+#property strict
+void OnTick(){
+   double step = SymbolInfoDouble(Symbol(), SYMBOL_VOLUME_STEP);
+   RefreshRates();
+   int t = OrderSend(Symbol(), OP_BUY, step, Ask, 3, 0, 0);
+   if(t < 0) Print(GetLastError());
+}`,
+  },
+  {
+    name: 'RefreshRates next to CTrade is an unfinished MQL5 port',
+    must: ['refreshrates-in-mql5'], never: [],
+    src: `
+#include <Trade/Trade.mqh>
+CTrade trade;
+void OnTick(){ RefreshRates(); if(!trade.Buy(0.1, _Symbol)) Print(trade.ResultRetcode()); }`,
+  },
+  {
+    name: 'the lot multiplied by a named input after a loss',
+    must: ['martingale'], never: [],
+    src: `
+input double InpLotMultiplier = 2.0;
+double lot = 0.1;
+void OnTick(){ if(LastLost()) lot *= InpLotMultiplier; }`,
+  },
+  {
+    name: 'a lot scaled by 20 is not a doubling',
+    must: [], never: ['martingale'],
+    src: `
+void OnTick(){
+   double lot = AccountBalance() / 1000.0;
+   double maxLot = lot * 20;
+   Print(maxLot);
+}`,
+  },
+  {
+    name: 'Pine v2 with no lookahead reads the future: its default was on',
+    must: ['pine-lookahead-on'], never: [],
+    src: `//@version=2
+study("HTF", overlay = true)
+htf = security(tickerid, "D", close)
+plot(htf)`,
+  },
   { name: 'empty input must not throw', must: [], never: [], src: `` },
   { name: 'comments only must not throw', must: [], never: [], src: `// nothing\n/* at all */` },
 ];

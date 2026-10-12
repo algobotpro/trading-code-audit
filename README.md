@@ -95,9 +95,9 @@ is how the live tool serves English, Persian and Arabic from one engine.
 node --experimental-strip-types --no-warnings test/audit-check.mjs
 ```
 
-58 cases and a time budget. 32 are real bugs it must catch, 3 are malformed
-input it must survive, and **23 are correct code it must stay silent on** —
-those 23 are the ones worth having. A false positive on an experienced
+63 cases and a time budget. 35 are real bugs it must catch, 3 are malformed
+input it must survive, and **25 are correct code it must stay silent on** —
+those 25 are the ones worth having. A false positive on an experienced
 developer's working code costs more credibility than ten true findings earn.
 
 A case whose language the analyser fails to recognise is counted as a failure,

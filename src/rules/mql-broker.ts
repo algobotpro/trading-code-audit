@@ -23,11 +23,21 @@ import {
 const TOUCHES_EXISTING =
   /^(OrderClose|OrderDelete|OrderModify|PositionClose|PositionModify|OrderCloseBy)$/;
 
-/** آیا این فایل نشانه‌های قطعی MQL5 دارد؟ */
+/**
+ * آیا این فایل نشانه‌های قطعی MQL5 دارد؟
+ *
+ * ⚠️ فقط چیزهایی که در MQL4 **نیستند**. `SymbolInfoDouble`،
+ * `SymbolInfoInteger`، `CopyRates` و `OnCalculate` از build 600 در MQL4 هم
+ * هستند، و نسخهٔ قبلی همین‌ها را نشانهٔ MQL5 می‌گرفت — یعنی یک اکسپرت سالم
+ * MQL4 که `RefreshRates()` را درست به‌کار می‌برد، هشدار بحرانی «کامپایل
+ * نمی‌شود» می‌گرفت.
+ */
 function looksLikeMql5(p: Program): boolean {
   const all = textOf(p, 0, p.toks.length);
-  return /MqlTradeRequest|MqlTradeResult|PositionsTotal|PositionGetTicket|SymbolInfoDouble|SymbolInfoInteger|CopyBuffer|CopyRates|OnCalculate/.test(
-    all,
+  const pre = p.toks.filter((t) => t.kind === 'pre').map((t) => t.text).join('\n');
+  return (
+    /\b(MqlTradeRequest|MqlTradeResult|MqlTradeTransaction|CTrade|CPositionInfo|PositionsTotal|PositionGetTicket|PositionSelect|PositionSelectByTicket|PositionGetDouble|PositionGetInteger|CopyBuffer|OnTradeTransaction|HistorySelect)\b/.test(all) ||
+    /#include\s*<Trade\//.test(pre)
   );
 }
 
